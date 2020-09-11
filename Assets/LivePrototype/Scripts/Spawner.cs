@@ -1,23 +1,30 @@
-﻿using System;
+﻿using System.Collections.Generic;
 using Photon.Pun;
 using Photon.Realtime;
 using UnityEngine;
+using UnityEngine.Serialization;
 
 public class Spawner : MonoBehaviourPunCallbacks
 {
-    [SerializeField] private SaveState[] saveState;
+    [FormerlySerializedAs("saveState")] [SerializeField] private SaveState[] saveStates;
 
-    [SerializeField] private GameObject resourcesCube;
+    [SerializeField] private Vector3 actorPosition;
 
-    private void Start()
+    public void Connect()
     {
+        Debug.Log("Connecting...");
         PhotonNetwork.ConnectUsingSettings();
-        
     }
 
     public override void OnConnectedToMaster()
     {
-        Debug.Log("Connected to Master!");
+        Debug.Log($"Connected to Master on region:{PhotonNetwork.CloudRegion}!");
+        PhotonNetwork.JoinLobby();
+    }
+
+    public override void OnJoinedLobby()
+    {
+        Debug.Log($"Connected to lobby:{PhotonNetwork.CurrentLobby.Name}!");
         PhotonNetwork.JoinOrCreateRoom("My Room", null, TypedLobby.Default);
     }
 
@@ -28,21 +35,63 @@ public class Spawner : MonoBehaviourPunCallbacks
 
     public override void OnJoinedRoom()
     {
-        Debug.Log($"Joined room {PhotonNetwork.CurrentRoom.Name}!");
-        
-        for
+        Debug.Log($"Joined room: {PhotonNetwork.CurrentRoom.Name}!");
+        PhotonNetwork.LocalPlayer.NickName = $"Player{PhotonNetwork.LocalPlayer.ActorNumber.ToString()}";
+        SpawnSceneObjects();
+        SpawnActorObject();
     }
 
-    private void SpawnResourceCubes(int count)
+    public override void OnPlayerEnteredRoom(Player newPlayer)
     {
-        for (var i = 0; i < count; i++)
+        Debug.Log($"{newPlayer.NickName} joined!");
+    }
+
+    public override void OnPlayerLeftRoom(Player otherPlayer)
+    {
+        Debug.Log($"{otherPlayer.NickName} left!");
+    }
+
+    private void SpawnSceneObjects()
+    {
+        foreach (var s in saveStates)
         {
-            var rcPos = saveState[0].position + Vector3.up * (1 + i);
-            var rcSpawn = PhotonNetwork.InstantiateSceneObject($"ResourcesCube", rcPos, Quaternion.Euler(saveState[0].rotation));
-            // var rcPhotonView = rcSpawn.GetComponent<PhotonView>();
-            // rcPhotonView.gameObject.name = $"ResourcesCube{i}";
-            // PrintDetails(rcPhotonView);
+            var spawn = Instantiate(s.prefab, s.position, Quaternion.Euler(s.rotation));
+            spawn.name = $"[Scene]{s.name}";
+            
+            var pv = spawn.AddComponent<PhotonView>();
+            pv.ViewID = s.viewId;
+            
+            var ptv = spawn.AddComponent<PhotonTransformView>();
+            ptv.m_SynchronizePosition = true;
+            ptv.m_SynchronizeRotation = true;
+            ptv.m_SynchronizeScale = true;
+
+            var c = spawn.AddComponent<Cube>();
+            c.renderer = spawn.GetComponentInChildren<Renderer>();
+
+            pv.ObservedComponents = new List<Component> {ptv};
+            pv.Synchronization = ViewSynchronization.Unreliable;
+
+            PrintDetails(pv);
         }
+    }
+
+    private void SpawnActorObject()
+    {
+        var pos = actorPosition;
+        var rot = Quaternion.identity;
+        var spawn = PhotonNetwork.Instantiate("Actor", pos, rot);
+        spawn.name = $"[{PhotonNetwork.LocalPlayer.NickName}]Actor";
+
+        // var ptv = spawn.AddComponent<PhotonTransformView>();
+        // ptv.m_SynchronizePosition = true;
+        // ptv.m_SynchronizeRotation = true;
+        // ptv.m_SynchronizeScale = true;
+        //
+        // var pv = spawn.GetComponent<PhotonView>();
+        // pv.ObservedComponents = new List<Component> {ptv};
+            
+        PrintDetails(spawn.GetComponent<PhotonView>());
     }
 
     private void PrintDetails(PhotonView photonView)
